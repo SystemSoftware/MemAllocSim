@@ -172,6 +172,11 @@ public class MemAllocSimJava
 				faultedMessage = msg;
 			}
 			
+			public boolean hasFaulted()
+			{
+				return faultedAtByteCount != -1;
+			}
+			
 			/**
 			 * Allocates a new chunk using the local allocator.
 			 * Once the allocator has faulted, the method stops doing anything.
@@ -394,6 +399,15 @@ public class MemAllocSimJava
 				verifyIntegrity();
 		}
 		
+		public boolean allFaulted()
+		{
+			for (PerAllocator alloc : allocators)
+				if (!alloc.hasFaulted())
+					return false;
+			return true;
+			
+		}
+		
 		/**
 		 * Executes an allocation instruction on all local allocators
 		 * @param numBytes Bytes to allocate
@@ -401,6 +415,8 @@ public class MemAllocSimJava
 		 */
 		public void allocate(int numBytes) throws Exception
 		{
+			if (allFaulted())
+				throw new Exception("All allocators have faulted");
 			if (numBytes <= 0)
 				return;
 			bytesPerAllocation.include(numBytes);
@@ -460,6 +476,8 @@ public class MemAllocSimJava
 		 */
 		public void freeAll() throws Exception
 		{
+			if (allFaulted())
+				return;
 			while (numAllocated > 0 && free(numAllocated-1));
 		}
 		
@@ -527,6 +545,8 @@ public class MemAllocSimJava
 		TestState.setAutoVerify(true);
 		Random random = new Random();
 		
+		try
+		{
 		for (int i = 0; i < 10000; i++)
 		{
 			int allocated = state.getCurrentlyAllocatedBytes();
@@ -535,8 +555,14 @@ public class MemAllocSimJava
 			if (allocated >= ALLOCATE_UP_TO || (random.nextBoolean() && allocated > FORCED_ALLOCATION_THRESHOLD) )
 				state.freeRandom(random);
 		}
+		}
+		catch (Exception ex)
+		{
+			System.out.println(ex);
+		}
 		state.freeAll();
 		System.out.println(state);
 	}
+	
 	
 }

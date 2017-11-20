@@ -48,6 +48,10 @@ public class Metric
 	 */
 	public void include(Metric other)
 	{
+		if (other == null || other.isEmpty())
+			return;
+		if (other.percentage != percentage)
+			throw new IllegalArgumentException("Metric.include() requires equal percentage states");
 		count += other.count;
 		sum += other.sum;
 		sqrSum += other.sqrSum;
@@ -55,8 +59,19 @@ public class Metric
 		min = Math.min(min, other.min);
 	}
 
-	static Metric combine(Metric a, Metric b)
+	/**
+	 * Combines two metrics into one
+	 * @param a First metric to combine
+	 * @param b Second metric to combine
+	 * @return Merged metric, or a/b if the other is null/empty.
+	 *			The result is null if both a and b are null.
+	 */
+	public static Metric combine(Metric a, Metric b)
 	{
+		if (a == null || a.isEmpty())
+			return b;
+		if (b == null || b.isEmpty())
+			return a;
 		if (a.percentage != b.percentage)
 			throw new IllegalArgumentException("Metric.combine() requires equal percentage states");
 		Metric rs = new Metric(a.percentage);
@@ -159,10 +174,10 @@ public class Metric
 	}
 
 	/**
-	 * Retrieves the number of values that have been included in the local metric
+	 * Retrieves the number of values included in the local metric
 	 * @return Number of included values. 0 if empty
 	 */
-	int getInclusionCount()
+	public int countInclusions()
 	{
 		return count;
 	}

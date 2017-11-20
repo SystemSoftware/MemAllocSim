@@ -210,7 +210,7 @@ public class AllocatorStateTracker
 		builder.append("  ").append(allocator).append("\n");
 		if (faultedAtByteCount.isSet())
 			builder.append("   faulted ")
-					.append(faultedAtByteCount.getInclusionCount())
+					.append(faultedAtByteCount.countInclusions())
 					.append("/").append(numRuns)
 					.append(" time(s) at avg byte/chunk: ")
 					.append((double)Math.round(faultedAtByteCount.getMean()*10)/10)

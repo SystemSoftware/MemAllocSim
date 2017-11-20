@@ -166,5 +166,13 @@ public interface Allocator {
 	 * @return Allocated memory + internal fragmentation
 	 */
 	int getOccupiedMemoryBytes();
+	
+	
+	/**
+	 * Creates an exact copy of the local object without any data allocated
+	 * @return New instance of the local class (same configuration), no blocks
+	 * allocated
+	 */
+	Allocator createNew();
 
 };

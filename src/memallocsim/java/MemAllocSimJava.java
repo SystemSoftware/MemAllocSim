@@ -46,6 +46,15 @@ public class MemAllocSimJava
 				max = Math.max(max,v);
 				min = Math.min(min, v);
 			}
+
+			public void include(Metric other)
+			{
+				count += other.count;
+				sum += other.sum;
+				sqrSum += other.sqrSum;
+				max = Math.max(max, other.max);
+				min = Math.min(min, other.min);
+			}
 			
 			/**
 			 * Calculates the mean value of the local metric.
@@ -121,23 +130,42 @@ public class MemAllocSimJava
 				rs.append(", calculated from ").append(count).append(" sample(s)");
 				return rs.toString();
 			}
+
 		};
+		
+		
+		public class MetricSet
+		{
+			public final Metric 
+					allocationCost = new Metric(),
+					freeCost = new Metric(), 
+					totalCost = new Metric(),
+					internalFragmentation = new Metric(),
+					externalFragmentation = new Metric();
+			
+			public void include(MetricSet other)
+			{
+				allocationCost.include(other.allocationCost);	
+				freeCost.include(other.freeCost);
+				totalCost.include(other.totalCost);
+				internalFragmentation.include(other.internalFragmentation);
+				externalFragmentation.include(other.externalFragmentation);
+			}
+		}
 		
 		/**
 		 * State recorded for an individual allocator
 		 */
 		public class PerAllocator
 		{
-			public final Allocator allocator;
-			private final Metric 
-					allocationCost = new Metric(),
-					freeCost = new Metric(), 
-					totalCost = new Metric(),
-					internalFragmentation = new Metric(),
-					externalFragmentation = new Metric();
-			private int faultedAtByteCount = -1,
-					  faultedAtAllocation = -1;
+			private Allocator allocator;
+			private boolean faulted = false;
 			private String faultedMessage;
+			private MetricSet run = new MetricSet();
+			private final MetricSet allTime = new MetricSet();
+			private final Metric faultedAtByteCount = new Metric(),
+								faultedAtAllocation = new Metric();
+			
 
 			private final ArrayList<Allocator.MemoryChunk>	allocatedList = new ArrayList<>();
 
@@ -161,20 +189,21 @@ public class MemAllocSimJava
 				int occupied = allocator.getOccupiedMemoryBytes();
 				if (occupied < currentlyAllocatedBytes)
 					throw new Exception("Validation failed: Should have allocated at least "+currentlyAllocatedBytes+" byte(s), but allocator reports only "+occupied);
-				internalFragmentation.include((double)allocator.getInternalFragmentationBytes() / allocator.getOccupiedMemoryBytes());
-				externalFragmentation.include((double)allocator.getExternalFragmentationBytes(EXTERNAL_FRAGMENTATION_THRESHOLD) / getTheoreticalFreeBytes());
+				run.internalFragmentation.include((double)allocator.getInternalFragmentationBytes() / allocator.getOccupiedMemoryBytes());
+				run.externalFragmentation.include((double)allocator.getExternalFragmentationBytes(EXTERNAL_FRAGMENTATION_THRESHOLD) / getTheoreticalFreeBytes());
 			}
 			
 			private void fault(String msg)
 			{
-				faultedAtByteCount = currentlyAllocatedBytes;
-				faultedAtAllocation = allocatedList.size();
+				faultedAtByteCount.include(currentlyAllocatedBytes);
+				faultedAtAllocation.include(allocatedList.size());
+				faulted = true;
 				faultedMessage = msg;
 			}
 			
 			public boolean hasFaulted()
 			{
-				return faultedAtByteCount != -1;
+				return faulted;
 			}
 			
 			/**
@@ -188,7 +217,7 @@ public class MemAllocSimJava
 			 */
 			private void allocate(int numBytes) throws Exception
 			{
-				if (faultedAtByteCount != -1)
+				if (faulted)
 					return;
 				counter.reset();
 				Allocator.MemoryChunk rs;
@@ -200,7 +229,7 @@ public class MemAllocSimJava
 				}
 				catch (Exception ex)
 				{
-					fault(ex.toString());
+					fault(ex.getMessage());
 					return;
 				}
 				try
@@ -211,8 +240,8 @@ public class MemAllocSimJava
 				{
 					throw new IllegalStateException(allocator+" has returned an invalid chunk",ex);
 				}
-				allocationCost.include(counter.getSteps());
-				totalCost.include(counter.getSteps());
+				run.allocationCost.include(counter.getSteps());
+				run.totalCost.include(counter.getSteps());
 				allocatedList.add(rs);
 				updateFragmentation();
 			}
@@ -223,7 +252,7 @@ public class MemAllocSimJava
 			 */
 			public Metric getAllocationCost()
 			{
-				return allocationCost;
+				return allTime.allocationCost;
 			}
 			/**
 			 * Retrieves a cost metric of all free operations
@@ -231,7 +260,7 @@ public class MemAllocSimJava
 			 */
 			public Metric getFreeCost()
 			{
-				return freeCost;
+				return allTime.freeCost;
 			}
 
 			/**
@@ -240,7 +269,7 @@ public class MemAllocSimJava
 			 */
 			public Metric getTotalCost()
 			{
-				return totalCost;
+				return allTime.totalCost;
 			}
 
 			/**
@@ -249,7 +278,7 @@ public class MemAllocSimJava
 			 */
 			public Metric getInternalFragmentation()
 			{
-				return internalFragmentation;
+				return allTime.internalFragmentation;
 			}
 			
 			/**
@@ -258,7 +287,7 @@ public class MemAllocSimJava
 			 */
 			public Metric getExternalFragmentation()
 			{
-				return externalFragmentation;
+				return allTime.externalFragmentation;
 			}
 			
 			/**
@@ -291,7 +320,7 @@ public class MemAllocSimJava
 			 */
 			private int free(int chunkIndex) throws Exception
 			{
-				if (faultedAtByteCount != -1)
+				if (faulted)
 					return 0;
 				Allocator.MemoryChunk chunk = allocatedList.remove(chunkIndex);
 				counter.reset();
@@ -304,8 +333,8 @@ public class MemAllocSimJava
 					fault(ex.toString());
 					return 0;
 				}
-				freeCost.include(counter.getSteps());
-				totalCost.include(counter.getSteps());
+				run.freeCost.include(counter.getSteps());
+				run.totalCost.include(counter.getSteps());
 //				updateFragmentation();
 				return chunk.byteSize;
 			}
@@ -317,17 +346,52 @@ public class MemAllocSimJava
 			private void appendTo(StringBuilder builder)
 			{
 				builder.append("  ").append(allocator).append("\n");
-				if (faultedAtAllocation != -1)
-					builder.append("   FAULTED ('"+faultedMessage+"') at byte/chunk: ").append(faultedAtByteCount).append("/").append(faultedAtAllocation).append("\n");
+				if (faultedAtByteCount.count > 0)
+					builder.append("   faulted ")
+							.append(faultedAtByteCount.count)
+							.append("/").append(numRuns)
+							.append(" time(s) at avg byte/chunk: ")
+							.append((double)Math.round(faultedAtByteCount.getMean()*10)/10)
+							.append("/")
+							.append((double)Math.round(faultedAtAllocation.getMean()*10)/10)
+							.append("\n");
 				
 				{
 					builder
-					.append("    allocation cost: ").append(getAllocationCost()).append("\n")
-					.append("    free cost: ").append(getFreeCost()).append("\n")
-					.append("    relative internal fragmentation: ").append(getInternalFragmentation().percentageToString()).append("\n")
-					.append("    relative external fragmentation (at "+EXTERNAL_FRAGMENTATION_THRESHOLD+" bytes): ").append(getExternalFragmentation().percentageToString()).append("\n");
+							.append("    allocation cost: ").append(getAllocationCost()).append("\n")
+							.append("    free cost: ").append(getFreeCost()).append("\n")
+							.append("    relative internal fragmentation: ")
+								.append(getInternalFragmentation().percentageToString())
+								.append("\n")
+							.append("    relative external fragmentation (at ")
+								.append(EXTERNAL_FRAGMENTATION_THRESHOLD)
+								.append(" bytes): ")
+								.append(getExternalFragmentation().percentageToString())
+								.append("\n");
 				}
 
+			}
+			
+			private int numRuns = 0;
+			
+			public void endRun() throws Exception
+			{
+				numRuns ++;
+				if (!faulted)
+					allTime.include(run);
+				run = new MetricSet();
+				
+				faulted = false;
+				allocatedList.clear();
+				Class old = allocator.getClass();
+				String oldName = allocator.toString();
+				allocator = allocator.createNew();
+				if (!old.equals(allocator.getClass()))
+					throw new Exception("Clone is not equal to original: "+old+" != "+allocator.getClass());
+				if (!oldName.equals(allocator.toString()))
+					throw new Exception("Clone is not equal to original: "+oldName+" != "+allocator.toString());
+				if (allocator.getOccupiedMemoryBytes() != 0)
+					throw new Exception("Clone has occupied space: "+allocator+": "+allocator.getOccupiedMemoryBytes()); 
 			}
 		};
 		
@@ -474,11 +538,12 @@ public class MemAllocSimJava
 		 * Frees all currently allocated chunks
 		 * @throws Exception 
 		 */
-		public void freeAll() throws Exception
+		public void endRun() throws Exception
 		{
-			if (allFaulted())
-				return;
-			while (numAllocated > 0 && free(numAllocated-1));
+			currentlyAllocatedBytes = 0;
+			numAllocated = 0;
+			for (PerAllocator alloc : allocators)
+				alloc.endRun();
 		}
 		
 		
@@ -531,6 +596,7 @@ public class MemAllocSimJava
 	
 	/**
 	 * @param args the command line arguments
+	 * @throws java.lang.Exception
 	 */
 	public static void main(String[] args) throws Exception
 	{
@@ -538,6 +604,9 @@ public class MemAllocSimJava
 								//new FirstFit(FirstFit.Flavor.IncreasingSize), 
 								//new FirstFit(FirstFit.Flavor.DecreasingSize), 
 								//new FirstFit(FirstFit.Flavor.NextFit), 
+								//new FirstFit(FirstFit.Flavor.NextFit, new FirstFit.PreciseX15()), 
+								//new FirstFit(FirstFit.Flavor.NextFit, new FirstFit.PreciseX1()), 
+								//new FirstFit(FirstFit.Flavor.NextFit, new FirstFit.MultiplesOf(16)), 
 								//new Buddy(),
 								new StackAllocator(), 
 								new NullAllocator(),
@@ -547,20 +616,34 @@ public class MemAllocSimJava
 		
 		try
 		{
-		for (int i = 0; i < 10000; i++)
-		{
-			int allocated = state.getCurrentlyAllocatedBytes();
-			if (allocated < FORCED_ALLOCATION_THRESHOLD || (random.nextBoolean() && allocated < ALLOCATE_UP_TO))
-				state.allocate(random.nextInt(256) * random.nextInt(256));
-			if (allocated >= ALLOCATE_UP_TO || (random.nextBoolean() && allocated > FORCED_ALLOCATION_THRESHOLD) )
-				state.freeRandom(random);
-		}
+			final int numRuns = 1000;
+			for (int j = 0; j < numRuns; j++)
+			{
+				try
+				{
+					for (int i = 0; i < 10000; i++)
+					{
+						int allocated = state.getCurrentlyAllocatedBytes();
+						if (allocated < FORCED_ALLOCATION_THRESHOLD || (random.nextBoolean() && allocated < ALLOCATE_UP_TO))
+							state.allocate(random.nextInt(256) * random.nextInt(256));
+						if (allocated >= ALLOCATE_UP_TO || (random.nextBoolean() && allocated > FORCED_ALLOCATION_THRESHOLD) )
+							state.freeRandom(random);
+					}
+				}
+				catch (Exception ex)
+				{
+					System.out.println(ex);
+				}
+				state.endRun();
+				if ( (j % (numRuns / 20)) == 0)
+					System.out.println((double)j / numRuns*100+"%");
+	//			System.out.flush();
+			}
 		}
 		catch (Exception ex)
 		{
 			System.out.println(ex);
 		}
-		state.freeAll();
 		System.out.println(state);
 	}
 	

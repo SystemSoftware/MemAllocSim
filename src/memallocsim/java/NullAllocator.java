@@ -45,4 +45,10 @@ public class NullAllocator implements Allocator
 	{
 		return 0;
 	}
+
+	@Override
+	public Allocator createNew()
+	{
+		return new NullAllocator();
+	}
 }

@@ -66,5 +66,12 @@ public class StackAllocator implements Allocator
 	{
 		return allocated;
 	}
-	
+
+
+	@Override
+	public Allocator createNew()
+	{
+		return new StackAllocator();
+	}
+
 }

@@ -36,15 +36,9 @@ public class MemAllocSimJava
 		SimulationState state = 
 				new SimulationState(
 						new Allocator[]{
-								new FirstFit(FirstFit.Flavor.IncreasingSize), 
-								new FirstFit(FirstFit.Flavor.DecreasingSize), 
-								new FirstFit(FirstFit.Flavor.NextFit), 
-								new FirstFit(FirstFit.Flavor.NextFit, new FirstFit.PreciseX15()), 
-								new FirstFit(FirstFit.Flavor.NextFit, new FirstFit.PreciseX1()), 
-								new FirstFit(FirstFit.Flavor.NextFit, new FirstFit.MultiplesOf(16)), 
-								new Buddy(),
-								//new StackAllocator(), 
-								//new NullAllocator(),
+								//your allocators here
+								new StackAllocator(), //remove
+								new NullAllocator(), //remove
 						}
 				);
 		Random random = new Random();

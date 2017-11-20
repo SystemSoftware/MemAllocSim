@@ -14,6 +14,19 @@ import java.util.Random;
  */
 public final class SimulationState
 {
+	/**
+	 * Exception 
+	 * @author IronFox
+	 */
+	public class AllAllocatorsHaveFaultedException extends Exception
+	{
+		public AllAllocatorsHaveFaultedException()
+		{
+			super("All allocators have faulted");
+		}
+	}
+	
+	
 	private final AllocatorStateTracker[] allocators;
 
 
@@ -99,7 +112,7 @@ public final class SimulationState
 	public void allocate(int numBytes) throws Exception
 	{
 		if (allFaulted())
-			throw new Exception("All allocators have faulted");
+			throw new AllAllocatorsHaveFaultedException();
 		if (numBytes <= 0)
 			return;
 		bytesPerAllocation.include(numBytes);

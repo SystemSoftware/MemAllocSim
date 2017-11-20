@@ -59,9 +59,11 @@ public class MemAllocSimJava
 							state.freeRandom(random);
 					}
 				}
+				catch (SimulationState.AllAllocatorsHaveFaultedException ex)
+				{}
 				catch (Exception ex)
 				{
-					System.out.println(ex);
+					System.err.println(ex);
 				}
 				state.endRun();
 				if ( (j % (numRuns / 20)) == 0)
@@ -71,7 +73,7 @@ public class MemAllocSimJava
 		}
 		catch (Exception ex)
 		{
-			System.out.println(ex);
+			System.err.println(ex);
 		}
 		System.out.println(state);
 	}

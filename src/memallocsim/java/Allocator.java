@@ -170,6 +170,7 @@ public interface Allocator {
 	
 	/**
 	 * Creates an exact copy of the local object without any data allocated
+	 * Make sure toString() is defined such that alloc.toString().equals(alloc.createNew().toString()) is always true
 	 * @return New instance of the local class (same configuration), no blocks
 	 * allocated
 	 */

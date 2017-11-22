@@ -117,12 +117,12 @@ public final class SimulationState
 			return;
 		bytesPerAllocation.include(numBytes);
 
+		for (AllocatorStateTracker alloc : allocators)
+			alloc.allocate(numBytes, numAllocated+1);
 		numAllocated++;
 		currentlyAllocatedBytes += numBytes;
 		mostAllocatedChunks = Math.max(mostAllocatedChunks,numAllocated);
 		mostBytesAllocated = Math.max(mostBytesAllocated, currentlyAllocatedBytes);
-		for (AllocatorStateTracker alloc : allocators)
-			alloc.allocate(numBytes);
 		if (autoVerify)
 			verifyIntegrity();
 	}
@@ -151,7 +151,7 @@ public final class SimulationState
 		int size = 0;
 		for (AllocatorStateTracker alloc : allocators)
 		{
-			int s = alloc.free(index);
+			int s = alloc.free(index, numAllocated);
 			if (s != 0)
 			{
 				size = s;
@@ -195,7 +195,8 @@ public final class SimulationState
 			throw new IllegalStateException("Total allocated memory exceeds allocatable memory space");
 
 		for (AllocatorStateTracker alloc : allocators)
-			alloc.verifyIntegrity();
+			if (!alloc.hasFaulted())
+				alloc.verifyIntegrity(numAllocated);
 	}
 
 	@Override

@@ -6,6 +6,7 @@
 package memallocsim.java;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 
 /**
  * State recorded for an individual allocator
@@ -27,6 +28,7 @@ public class AllocatorStateTracker
 	private final Metric faultedAtByteCount = new Metric(false),
 						faultedAtAllocation = new Metric(false);
 	private int currentlyAllocatedBytes = 0;
+	private HashSet<String> faultMessages = new HashSet<>();
 
 	private final ArrayList<Allocator.MemoryChunk>	allocatedList = new ArrayList<>();
 
@@ -37,29 +39,47 @@ public class AllocatorStateTracker
 		allocator = alloc;	
 	}
 
-	public void verifyIntegrity()
+	void verifyIntegrity(int numAllocated)
 	{
-		for (int i = 0; i+1 < allocatedList.size(); i++)
-			for (int j = i+1; j < allocatedList.size(); j++)
-			{
-				Allocator.MemoryChunk a = allocatedList.get(i),
-								b = allocatedList.get(j);
-				if (a.byteOffset < b.getEnd() && b.byteOffset < a.getEnd() )
-					throw new IllegalStateException("Chunks overlap: "+a+", "+b);
-			}
+		try
+		{
+			if (numAllocated != allocatedList.size() && !faulted)
+				throw new IllegalStateException("System says "+numAllocated+" chunks were allocated. I only recorded "+allocatedList.size());
+			for (int i = 0; i+1 < allocatedList.size(); i++)
+				for (int j = i+1; j < allocatedList.size(); j++)
+				{
+					Allocator.MemoryChunk a = allocatedList.get(i),
+									b = allocatedList.get(j);
+					if (a.byteOffset < b.getEnd() && b.byteOffset < a.getEnd() )
+						throw new IllegalStateException("Chunks overlap: "+a+", "+b);
+				}
+		}
+		catch (IllegalStateException ex)
+		{
+			fault(ex.getMessage());
+		}
 	}
 
 	private void updateFragmentation() throws Exception
 	{
-		thisRun.internalFragmentation.include((double)allocator.getInternalFragmentationBytes() / allocator.getOccupiedMemoryBytes());
+		final double internalBytes = allocator.getInternalFragmentationBytes();
+		final double occupiedBytes = allocator.getOccupiedMemoryBytes();
+		double internal = (double)internalBytes / occupiedBytes;
+		if (internalBytes < 0 || internalBytes >= occupiedBytes)
+			throw new IllegalArgumentException(allocator+": The value returned by getInternalFragmentationBytes() = "+internalBytes+" exceeds the valid range [0,getOccupiedMemoryBytes() = "+occupiedBytes+")");
+		thisRun.internalFragmentation.include(internal);
 		thisRun.externalFragmentation.include((double)allocator.getExternalFragmentationBytes(EXTERNAL_FRAGMENTATION_THRESHOLD) / getTheoreticalFreeBytes());
 	}
 	private void fault(String msg)
 	{
+		if (faulted)
+			return;
+		//System.out.println(allocator+": "+ msg);
 		faultedAtByteCount.include(currentlyAllocatedBytes);
 		faultedAtAllocation.include(allocatedList.size());
 		faulted = true;
 		faultedMessage = msg;
+		faultMessages.add(msg);
 	}
 
 	public boolean hasFaulted()
@@ -76,7 +96,7 @@ public class AllocatorStateTracker
 	 * @throws Exception Exceptions may be thrown in case internal
 	 * integrity is violated.
 	 */
-	public void allocate(int numBytes) throws Exception
+	public void allocate(int numBytes, int numAllocated) throws Exception
 	{
 		if (faulted)
 			return;
@@ -87,24 +107,21 @@ public class AllocatorStateTracker
 			rs = allocator.allocate(numBytes,counter);
 			if (rs == null)
 				throw new Exception(allocator+ ".allocate() returned null");
+			rs.assertValidity();
+			currentlyAllocatedBytes += rs.byteSize;
+			updateFragmentation();
 		}
 		catch (Exception ex)
 		{
 			fault(ex.getMessage());
 			return;
 		}
-		try
-		{
-			rs.assertValidity();
-		}
-		catch (IllegalStateException ex)
-		{
-			throw new IllegalStateException(allocator+" has returned an invalid chunk",ex);
-		}
-		currentlyAllocatedBytes += rs.byteSize;
 		thisRun.allocationCost.include(counter.getSteps());
 		allocatedList.add(rs);
-		updateFragmentation();
+		if (numAllocated != allocatedList.size())
+			throw new IllegalStateException();
+		if (numAllocated != allocatedList.size())
+			throw new IllegalStateException();
 	}
 
 	/**
@@ -180,10 +197,13 @@ public class AllocatorStateTracker
 	 * @return Number of bytes that were freed, or 0 if a fault occurred
 	 * @throws Exception 
 	 */
-	public int free(int chunkIndex) throws Exception
+	public int free(int chunkIndex, int numAllocated) throws Exception
 	{
 		if (faulted)
 			return 0;
+		if (numAllocated != allocatedList.size())
+			throw new IllegalStateException();
+		
 		Allocator.MemoryChunk chunk = allocatedList.remove(chunkIndex);
 		counter.reset();
 		currentlyAllocatedBytes -= chunk.byteSize;
@@ -209,6 +229,7 @@ public class AllocatorStateTracker
 	{
 		builder.append("  ").append(allocator).append("\n");
 		if (faultedAtByteCount.isSet())
+		{
 			builder.append("   faulted ")
 					.append(faultedAtByteCount.countInclusions())
 					.append("/").append(numRuns)
@@ -217,6 +238,14 @@ public class AllocatorStateTracker
 					.append("/")
 					.append((double)Math.round(faultedAtAllocation.getMean()*10)/10)
 					.append("\n");
+			int counter = 0;
+			for (String msg : faultMessages)
+			{
+				if (++counter > 1)
+					break;
+				builder.append("      (").append(msg).append(")\n");
+			}
+		}
 
 		{
 			builder
